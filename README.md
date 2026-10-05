@@ -1,103 +1,125 @@
 # Reverse SSH Tunnel
 
-Akses mesin yang tidak bisa menerima koneksi masuk (client-only, di balik NAT/firewall ketat)
-via reverse SSH tunnel ke mesin perantara.
+**Masuk ke mesin yang tidak bisa dimasuki.**
 
-## Konsep
+Punya VM atau server yang cuma bisa koneksi keluar? Tidak punya IP publik? Firewall nutup semua pintu masuk? Pakai trik ini: suruh mesinnya yang telepon keluar dulu, lalu kamu masuk lewat sambungan itu.
+
+## Cara Kerja (Simpel)
 
 ```
-[VM Client-Only] ----SSH keluar----> [Server Perantara] <----SSH masuk---- [Klien]
-     :2222                    port 22            :2223                  port 2223
+[Mesin Terkunci] --telepon keluar--> [Server Perantara] <--kamu masuk-- [Laptop Kamu]
 ```
 
-VM membuka koneksi SSH keluar ke server perantara, lalu meminta server membuka
-port 2223 yang diteruskan balik ke VM. Klien konek ke server:2223 dan sampai ke VM.
+1. Mesin terkunci buka koneksi SSH **keluar** ke server perantara (ini boleh, kan cuma nelpon keluar)
+2. Di dalam koneksi itu, dia titip pesan: "kalau ada yang datang ke port 2223, teruskan ke saya"
+3. Kamu SSH ke server perantara port 2223
+4. Sampai deh di mesin terkunci
 
-## Kebutuhan
+Tidak ada pintu baru yang dibuka. Cuma numpang lewat pintu keluar yang memang boleh dibuka dari dalam.
 
-- VM client-only: bisa SSH keluar, tidak bisa terima koneksi masuk
-- Server perantara: bisa terima SSH, reachable oleh klien
-- Klien: bisa SSH ke server perantara
+## Kapan Kamu Butuh Ini
 
-## Setup
+- VM cloud tanpa IP publik
+- Server di balik NAT yang tidak bisa setting port forwarding
+- Mesin client-only (kayak sandbox AI) yang tolak semua koneksi masuk
+- Akses dashboard internal (port 3000, 8080) dari jarak jauh tanpa expose ke internet
 
-### 1. Di VM (client-only)
+## Yang Kamu Butuhkan
 
-Install openssh-server, lalu buat sshd khusus yang hanya listen di localhost:
+- **Mesin terkunci**: bisa SSH keluar (port 22)
+- **Server perantara**: bisa terima SSH, bisa kamu jangkau
+- **Key SSH**: sepasang key untuk autentikasi
+
+## Setup, Langkah per Langkah
+
+### 1. Siapkan SSH khusus di mesin terkunci
+
+Kenapa khusus? Biar tidak ganggu sshd utama. Kita jalanin sshd kedua yang cuma dengerin localhost.
 
 ```bash
 mkdir -p ~/reverse-tunnel
 ```
 
-Salin `sshd_config.example` ke `~/reverse-tunnel/sshd_config`, sesuaikan `AllowUsers`.
+Copy `sshd_config.example` jadi `sshd_config`, ganti `<user>` dengan username kamu.
 
-Isi `authorized_keys` dengan public key dari server perantara:
+Masukkan public key dari server perantara ke `authorized_keys`:
 
 ```bash
-# di server perantara
+# Di server perantara, ambil public key:
 cat ~/.ssh/id_ed25519.pub
-# salin output ke ~/reverse-tunnel/authorized_keys di VM
+
+# Tempel ke ~/reverse-tunnel/authorized_keys di mesin terkunci
 ```
 
-Jalankan sshd khusus:
+Jalankan:
 
 ```bash
 sudo mkdir -p /run/sshd
 /usr/sbin/sshd -f ~/reverse-tunnel/sshd_config
 ```
 
-### 2. Buat script tunnel
+### 2. Siapkan script tunnel
 
-Salin `reverse-tunnel.sh.example` ke `~/reverse-tunnel/reverse-tunnel.sh`,
-sesuaikan variabel `REMOTE_USER`, `REMOTE_HOST`, `REMOTE_PORT`.
+Copy `reverse-tunnel.sh.example` jadi `reverse-tunnel.sh`, isi bagian konfigurasi:
 
-Jalankan dengan loop auto-reconnect:
+```bash
+REMOTE_USER="user-server-perantara"
+REMOTE_HOST="ip-server-perantara"
+```
+
+Jalankan di background (auto-reconnect kalau putus):
 
 ```bash
 chmod +x ~/reverse-tunnel/reverse-tunnel.sh
 nohup ~/reverse-tunnel/reverse-tunnel.sh > ~/reverse-tunnel/tunnel.log 2>&1 &
 ```
 
-### 3. Di server perantara
+### 3. Buka keran di server perantara
 
-Aktifkan GatewayPorts agar port forward bisa diakses dari luar:
+Server perantara harus izinkan port forward diakses dari luar. Tambah ke `/etc/ssh/sshd_config`:
 
-```bash
-# /etc/ssh/sshd_config
+```
 GatewayPorts yes
 ```
+
+Restart:
 
 ```bash
 sudo systemctl restart sshd
 ```
 
-### 4. Test
+### 4. Masuk!
 
-Dari klien:
+Dari laptop kamu:
 
 ```bash
 ssh -p 2223 <user>@<server-perantara>
 ```
 
-Jika berhasil, klien sudah masuk ke VM.
+Kalau berhasil, kamu sudah di dalam mesin terkunci.
 
-## Recovery
+## Biar Tidak Mati
 
-Jalankan `ensure-up.sh` untuk memastikan sshd dan tunnel tetap hidup.
-Bisa dipasang sebagai cron `@reboot` atau hook berkala.
+VM bisa restart sewaktu-waktu. Pakai `ensure-up.sh` buat mastiin sshd dan tunnel selalu hidup. Pasang sebagai cron `@reboot` atau jalanin berkala.
 
-## Keamanan
+## Soal Keamanan
 
-- Tunnel terenkripsi SSH penuh
-- Tetap butuh SSH key yang valid untuk masuk
-- Siapa pun yang pegang key dan bisa akses server:2223 bisa masuk ke VM
-- Untuk isolasi lebih ketat, ganti `0.0.0.0:2223` jadi `127.0.0.1:2223`
-  (hanya bisa diakses dari server perantara itu sendiri)
+Jujur ya:
 
-## File
+- **Aman**: koneksi terenkripsi SSH penuh, tetap butuh key yang valid
+- **Risiko**: siapa pun yang pegang key dan bisa akses server:2223 bisa masuk ke mesin kamu
+- **Tips**: kalau cuma kamu yang butuh akses, ganti `0.0.0.0:2223` jadi `127.0.0.1:2223` di script. Artinya port cuma bisa diakses dari server perantara itu sendiri, bukan dari luar
 
-| File | Fungsi |
-|------|--------|
-| `sshd_config.example` | Konfigurasi sshd khusus di VM |
-| `reverse-tunnel.sh.example` | Script pembuat tunnel dengan auto-reconnect |
-| `ensure-up.sh` | Script recovery sshd + tunnel |
+Ini fitur resmi SSH, bukan hack. Tapi kayak pisau: bisa buat masak, bisa juga buat yang lain. Pakai dengan bijak.
+
+## Isi Repo
+
+| File | Buat apa |
+|------|----------|
+| `sshd_config.example` | Config sshd khusus (contoh, tinggal sesuaikan) |
+| `reverse-tunnel.sh.example` | Script tunnel + auto-reconnect (contoh, tinggal isi variabel) |
+| `ensure-up.sh` | Script jaga-jaga biar tunnel tidak mati |
+
+## Lisensi
+
+Bebas pakai, bebas modif. Kalau membantu, kasih bintang ya.
