@@ -1,0 +1,84 @@
+#!/bin/bash
+# recover-node-muse.sh - Full recovery untuk node Muse setelah VM reset
+# Dijalankan dari $HOME (persist), bisa dipasang sebagai hook berkala
+#
+# Yang dipulihkan:
+# 1. Paket: openssh-server, btop, yazi
+# 2. /root/.bashrc dari backup
+# 3. yazi config ke /root/.config/
+# 4. Locale UTF-8
+# 5. sshd khusus port 2222
+# 6. Reverse tunnel ke Michael
+
+HOME_DIR="$HOME"
+TUNNEL_DIR="$HOME_DIR/muse-vps-tailscale"
+LOG="$TUNNEL_DIR/recover.log"
+
+log() { echo "$(date '+%F %T'): $1" | tee -a "$LOG"; }
+
+log "=== mulai recovery ==="
+
+# 1. Paket openssh-server
+if ! command -v sshd >/dev/null 2>&1; then
+  log "install openssh-server..."
+  sudo apt-get update -qq 2>&1 | tail -1
+  sudo apt-get install -y -qq openssh-server btop 2>&1 | tail -1
+  log "openssh-server + btop terinstall"
+fi
+
+# 2. yazi binary
+if ! command -v yazi >/dev/null 2>&1; then
+  log "install yazi..."
+  cd /tmp
+  wget -q https://github.com/sxyazi/yazi/releases/download/v25.4.8/yazi-x86_64-unknown-linux-gnu.zip -O yazi.zip
+  unzip -o -q yazi.zip
+  sudo cp yazi-x86_64-unknown-linux-gnu/yazi /usr/local/bin/
+  sudo chmod +x /usr/local/bin/yazi
+  rm -rf /tmp/yazi.zip /tmp/yazi-x86_64-unknown-linux-gnu
+  log "yazi terinstall: $(yazi --version 2>&1)"
+fi
+
+# 3. Locale UTF-8
+if ! locale -a 2>/dev/null | grep -q "en_US.utf8"; then
+  log "generate locale..."
+  sudo locale-gen en_US.UTF-8 2>&1 | tail -1
+fi
+
+# 4. Restore /root/.bashrc dari backup
+if [ -f "$TUNNEL_DIR/bashrc-node-muse.bak" ]; then
+  if ! grep -q "BASHRC VM MUSE" /root/.bashrc 2>/dev/null; then
+    log "restore /root/.bashrc..."
+    cp "$TUNNEL_DIR/bashrc-node-muse.bak" /root/.bashrc
+    log "bashrc direstore"
+  fi
+fi
+
+# 5. Restore yazi config ke /root/.config/
+if [ -d "$HOME_DIR/.config/yazi" ] && [ ! -d "/root/.config/yazi" ]; then
+  log "restore yazi config..."
+  mkdir -p /root/.config
+  cp -r "$HOME_DIR/.config/yazi" /root/.config/
+  log "yazi config direstore"
+fi
+
+# 6. sshd khusus port 2222
+if ! ss -tln 2>/dev/null | grep -q "127.0.0.1:2222"; then
+  log "nyalakan sshd:2222..."
+  sudo mkdir -p /run/sshd 2>/dev/null
+  /usr/sbin/sshd -f "$TUNNEL_DIR/sshd_config" 2>>"$LOG"
+  sleep 1
+  if ss -tln 2>/dev/null | grep -q "127.0.0.1:2222"; then
+    log "sshd:2222 OK"
+  else
+    log "GAGAL nyalakan sshd"
+  fi
+fi
+
+# 7. Reverse tunnel
+if ! pgrep -f "reverse-to-michael.sh" >/dev/null; then
+  log "nyalakan reverse tunnel..."
+  nohup "$TUNNEL_DIR/reverse-to-michael.sh" > "$TUNNEL_DIR/reverse.log" 2>&1 &
+  log "tunnel dinyalakan"
+fi
+
+log "=== recovery selesai ==="

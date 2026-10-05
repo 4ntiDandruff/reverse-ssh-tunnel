@@ -102,6 +102,20 @@ Kalau berhasil, kamu sudah di dalam mesin terkunci.
 
 VM bisa restart sewaktu-waktu. Pakai `ensure-up.sh` buat mastiin sshd dan tunnel selalu hidup. Pasang sebagai cron `@reboot` atau jalanin berkala.
 
+### Kalau VM-mu sering di-reset total
+
+Beberapa platform (kayak sandbox AI) tidak cuma reboot tapi **reset total**: semua di luar home directory hilang. Paket terinstall lenyap, config di `/etc/` dan `/root/` musnah.
+
+Solusinya: `recover-node-muse.sh.example`. Script ini:
+
+1. Install ulang paket yang hilang (openssh-server, btop, yazi)
+2. Restore config dari backup di home directory
+3. Nyalakan sshd dan tunnel lagi
+
+Pasang sebagai hook/scheduler yang jalan tiap 5 menit. Script-nya idempoten: kalau semua sehat, dia diam saja tidak ngapa-ngapain.
+
+**Aturan emas**: simpan semua yang penting di dalam home directory. Di luar itu anggap sekali pakai.
+
 ## Soal Keamanan
 
 Jujur ya:
@@ -119,6 +133,8 @@ Ini fitur resmi SSH, bukan hack. Tapi kayak pisau: bisa buat masak, bisa juga bu
 | `sshd_config.example` | Config sshd khusus (contoh, tinggal sesuaikan) |
 | `reverse-tunnel.sh.example` | Script tunnel + auto-reconnect (contoh, tinggal isi variabel) |
 | `ensure-up.sh` | Script jaga-jaga biar tunnel tidak mati |
+| `recover-node-muse.sh.example` | Recovery lengkap pasca-reset total (reinstall paket + restore config) |
+| `LICENSE` | Lisensi MIT |
 
 ## Lisensi
 
