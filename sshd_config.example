@@ -1,0 +1,26 @@
+# sshd_config khusus untuk reverse tunnel
+# Hanya listen di localhost, tidak expose ke jaringan
+
+Port 2222
+ListenAddress 127.0.0.1
+Protocol 2
+
+# Hanya user yang diizinkan
+AllowUsers root
+
+# Auth key saja, tanpa password
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile /home/<user>/reverse-tunnel/authorized_keys
+
+# Keamanan dasar
+PermitRootLogin prohibit-password
+X11Forwarding no
+AllowTcpForwarding yes
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# PID terpisah dari sshd utama
+PidFile /run/sshd-tunnel.pid
