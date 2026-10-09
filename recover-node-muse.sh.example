@@ -19,22 +19,59 @@ log() { echo "$(date '+%F %T'): $1" | tee -a "$LOG"; }
 log "=== mulai recovery ==="
 
 # 1. Paket openssh-server
+# Fail-safe: JANGAN klaim "terinstall" tanpa verifikasi.
+# apt-get bisa gagal diam-diam (mis. lock dipegang proses lain) -> /usr/sbin/sshd tetap tak ada.
 if ! command -v sshd >/dev/null 2>&1; then
   log "install openssh-server..."
   sudo apt-get update -qq 2>&1 | tail -1
   sudo apt-get install -y -qq openssh-server btop 2>&1 | tail -1
-  log "openssh-server + btop terinstall"
+  if command -v sshd >/dev/null 2>&1; then
+    log "openssh-server + btop terinstall"
+  else
+    log "GAGAL install openssh-server via apt (lock/proses lain atau repo tak terjangkau)"
+    # Fallback: .deb di /var/cache/apt/archives survive reset, tak butuh apt update
+    DEB_SRV=$(ls -t /var/cache/apt/archives/openssh-server_*.deb 2>/dev/null | head -1)
+    DEB_SFTP=$(ls -t /var/cache/apt/archives/openssh-sftp-server_*.deb 2>/dev/null | head -1)
+    if [ -n "$DEB_SRV" ]; then
+      log "coba install openssh-server dari cache lokal..."
+      sudo dpkg -i "$DEB_SRV" "$DEB_SFTP" 2>&1 | tail -1
+      if command -v sshd >/dev/null 2>&1; then
+        log "openssh-server terinstall dari cache lokal"
+      else
+        log "GAGAL juga dari cache lokal"
+      fi
+    else
+      log "tidak ada .deb openssh-server di cache lokal"
+    fi
+  fi
+fi
+
+# 1b. Pastikan paket terkonfigurasi (postinst membuat user sshd + host key)
+# Jika openssh-server berstatus unpacked (iU) tapi belum configured,
+# user sshd belum dibuat sehingga sshd gagal start (Privilege separation user sshd does not exist)
+if ! id sshd >/dev/null 2>&1; then
+  log "user sshd belum siap, jalankan dpkg --configure -a..."
+  sudo dpkg --configure -a 2>&1 | tail -1
 fi
 
 # 2. yazi binary
 if ! command -v yazi >/dev/null 2>&1; then
   log "install yazi..."
-  cd /tmp
-  wget -q https://github.com/sxyazi/yazi/releases/download/v25.4.8/yazi-x86_64-unknown-linux-gnu.zip -O yazi.zip
-  unzip -o -q yazi.zip
-  sudo cp yazi-x86_64-unknown-linux-gnu/yazi /usr/local/bin/
-  sudo chmod +x /usr/local/bin/yazi
-  rm -rf /tmp/yazi.zip /tmp/yazi-x86_64-unknown-linux-gnu
+  # Prioritas 1: Jika binary sudah dicadangkan di folder persist ($HOME_DIR/.local/bin/yazi), copy langsung (cepat & hemat kuota)
+  if [ -x "$HOME_DIR/.local/bin/yazi" ]; then
+    log "copy yazi dari cache persist ($HOME_DIR/.local/bin/yazi)..."
+    sudo cp "$HOME_DIR/.local/bin/yazi" /usr/local/bin/
+    sudo chmod +x /usr/local/bin/yazi
+  else
+    cd /tmp
+    wget -q https://github.com/sxyazi/yazi/releases/download/v25.4.8/yazi-x86_64-unknown-linux-gnu.zip -O yazi.zip
+    unzip -o -q yazi.zip
+    sudo cp yazi-x86_64-unknown-linux-gnu/yazi /usr/local/bin/
+    sudo chmod +x /usr/local/bin/yazi
+    mkdir -p "$HOME_DIR/.local/bin" 2>/dev/null
+    cp yazi-x86_64-unknown-linux-gnu/yazi "$HOME_DIR/.local/bin/" 2>/dev/null
+    rm -rf /tmp/yazi.zip /tmp/yazi-x86_64-unknown-linux-gnu
+  fi
   log "yazi terinstall: $(yazi --version 2>&1)"
 fi
 

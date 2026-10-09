@@ -1,6 +1,22 @@
+<div align="center">
+
 # Reverse SSH Tunnel
 
 **Masuk ke mesin yang tidak bisa dimasuki.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg?style=flat-square)](https://github.com/4ntiDandruff/reverse-ssh-tunnel)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20POSIX-blue.svg?style=flat-square)](#)
+
+<p align="center">
+  <a href="https://megapass.web.id"><img src="https://img.shields.io/badge/Website-megapass.web.id-000?style=flat-square&logo=firefoxbrowser&logoColor=white" alt="Website" /></a>
+  <a href="https://megapass.web.id/teknisi/"><img src="https://img.shields.io/badge/Portofolio-megapass.web.id%2Fteknisi-0A66C2?style=flat-square&logo=googlechrome&logoColor=white" alt="Teknisi" /></a>
+  <a href="https://github.com/4ntiDandruff"><img src="https://img.shields.io/badge/GitHub-4ntiDandruff-24292e?style=flat-square&logo=github&logoColor=white" alt="GitHub" /></a>
+</p>
+
+---
+
+</div>
 
 Punya VM atau server yang cuma bisa koneksi keluar? Tidak punya IP publik? Firewall nutup semua pintu masuk? Pakai trik ini: suruh mesinnya yang telepon keluar dulu, lalu kamu masuk lewat sambungan itu.
 
@@ -90,10 +106,16 @@ sudo systemctl restart sshd
 
 ### 4. Masuk!
 
-Dari laptop kamu:
+Dari laptop kamu atau server perantara:
 
 ```bash
 ssh -p 2223 <user>@<server-perantara>
+```
+
+Atau jika masuk dari localhost server perantara (rekomendasi: gunakan `127.0.0.1` daripada `localhost` agar tidak bentrok IPv6 `::1`):
+
+```bash
+ssh -p 2223 root@127.0.0.1
 ```
 
 Kalau berhasil, kamu sudah di dalam mesin terkunci.
@@ -102,19 +124,27 @@ Kalau berhasil, kamu sudah di dalam mesin terkunci.
 
 VM bisa restart sewaktu-waktu. Pakai `ensure-up.sh` buat mastiin sshd dan tunnel selalu hidup. Pasang sebagai cron `@reboot` atau jalanin berkala.
 
-### Kalau VM-mu sering di-reset total
+### Kalau VM-mu sering di-reset total (Ephemeral Root + Persistent Home)
 
-Beberapa platform (kayak sandbox AI) tidak cuma reboot tapi **reset total**: semua di luar home directory hilang. Paket terinstall lenyap, config di `/etc/` dan `/root/` musnah.
+Beberapa platform (kayak sandbox AI atau VM runtime container) tidak cuma reboot biasa tapi **reset total**:
+- Root filesystem (`/`) adalah ephemeral overlay: semua paket di luar home directory lenyap saat reset.
+- Home directory (`$HOME` atau mount storage khusus) adalah **persistent storage** yang tidak ke-wipe.
 
-Solusinya: `recover-node-muse.sh.example`. Script ini:
+Solusinya: `recover-node-muse.sh.example`. Script pemulihan ini dirancang dengan standar fail-safe teknisi:
 
-1. Install ulang paket yang hilang (openssh-server, btop, yazi)
-2. Restore config dari backup di home directory
-3. Nyalakan sshd dan tunnel lagi
+1. **Verifikasi Instalasi Paket Real**:
+   - Mengecek keberadaan biner SSH nyata (`command -v sshd`), bukan sekadar output log status.
+   - Punya fallback otomatis mengekstrak file `.deb` dari cache lokal `/var/cache/apt/archives/` jika `apt-get` terkunci atau repository gagal dihubungi.
+2. **Sirkuit Unpack `dpkg --configure -a`**:
+   - Memastikan paket terkonfigurasi sempurna sehingga user privilege separation `sshd` otomatis tercipta dan tidak memicu crash daemon.
+3. **Penyimpanan Cache Biner Persist**:
+   - Binary utilitas (seperti Yazi, btop) dipulihkan langsung dari cache persistent (`$HOME/.local/bin/`) sebelum mengunduh via jaringan.
+4. **Restore Lingkungan Shell & SSHD**:
+   - Mengembalikan `.bashrc`, locale UTF-8, konfigurasi Yazi, lalu menyalakan ulang daemon SSH port 2222 dan reverse SSH loop.
 
-Pasang sebagai hook/scheduler yang jalan tiap 5 menit. Script-nya idempoten: kalau semua sehat, dia diam saja tidak ngapa-ngapain.
+Pasang sebagai hook watchdog berkala (misal tiap 5 menit). Script bersifat idempoten: jika semua komponen sehat, script diam dan tidak membebani sistem.
 
-**Aturan emas**: simpan semua yang penting di dalam home directory. Di luar itu anggap sekali pakai.
+> **Aturan Emas**: Simpan semua konfigurasi, kunci SSH, dan skrip penting di dalam home directory / persistent storage. Anggap semua folder di luar itu bersifat sekali pakai.
 
 ## Soal Keamanan
 
@@ -133,9 +163,15 @@ Ini fitur resmi SSH, bukan hack. Tapi kayak pisau: bisa buat masak, bisa juga bu
 | `sshd_config.example` | Config sshd khusus (contoh, tinggal sesuaikan) |
 | `reverse-tunnel.sh.example` | Script tunnel + auto-reconnect (contoh, tinggal isi variabel) |
 | `ensure-up.sh` | Script jaga-jaga biar tunnel tidak mati |
-| `recover-node-muse.sh.example` | Recovery lengkap pasca-reset total (reinstall paket + restore config) |
+| `recover-node-muse.sh.example` | Recovery lengkap pasca-reset total (reinstall paket + fallback deb lokal + restore config) |
+| `CHANGELOG.md` | Rekam jejak pembaruan dan peningkatan ketahanan sistem |
 | `LICENSE` | Lisensi MIT |
 
-## Lisensi
+---
 
-Bebas pakai, bebas modif. Kalau membantu, kasih bintang ya.
+<div align="center">
+
+**Megapass Intra Solusindo • Sidoarjo, Indonesia**  
+*Teknisi Bersertifikasi BNSP & Praktisi Otomasi Sistem*
+
+</div>
